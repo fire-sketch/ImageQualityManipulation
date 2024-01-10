@@ -1,19 +1,11 @@
+import re
 from pathlib import Path
 
-import matplotlib
-import numpy as np
-import pydicom
-import pandas as pd
-import pymedphys
-
-import glob
-import seaborn as sns
-import os
-import re
 import PatientEvaluation
 
+do_overlay = 1
 # gauss, rect, noise, both, gauss_noise
-mods = 'rect'
+mods = 'gauss'
 
 folder_selected = None
 if mods == 'rect':
@@ -34,10 +26,10 @@ values = [x.zfill(2) for x in values]
 p = []
 pat = []
 for path, patient in zip(paths, patient_names):
-    if re.search('\d{2}', patient)[0] in values:
+    if re.search(r'\d{2}', patient)[0] in values:
         p.append(path)
         pat.append(patient)
 paths = p
 patient_names = pat
 for p, pat in zip(paths, patient_names):
-    PatientEvaluation.progress(str(p), pat, mods)
+    PatientEvaluation.progress(do_overlay, str(p), pat, mods)

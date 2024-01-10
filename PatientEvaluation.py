@@ -1,40 +1,22 @@
 from pathlib import Path
 import natsort
-import matplotlib
 import numpy as np
-import dash
-from dash import html
-import imageio
-from dash_slicer import VolumeSlicer
 import PIL.Image
-from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
-import imageio
-import pydicom
 import pandas as pd
-import pymedphys
-from tkinter import filedialog
-from tkinter import *
 import cv2
 import glob
-import seaborn as sns
 import os
 import re
-from scipy.optimize import curve_fit
-import dicts
+import Dicts
 
 
-def init():
-    return dic_diff, dic_gamma, dic_stats
-
-
-def gauss(x, *p):
-    A, mu, sigma = p
-    return A * np.exp(-(x - mu) ** 2 / (2. * sigma ** 2))
-
-
-def get_cts(id):
-    path = r"../data/output_data/png_org" + "/" + id
+def get_cts(patient, use='mod', w='1'):
+    path = ''
+    if use == 'original':
+        path = r"../data/output_data/png_original" + "/" + patient
+    elif use == 'mod':
+        path = r"../data/output_data/png/" + patient + 'w' + w
     ct_paths = glob.glob(path + '/*.png')
     ct_paths = natsort.natsorted(ct_paths, reverse=True)
     cts = []
@@ -44,21 +26,38 @@ def get_cts(id):
     return cts
 
 
-def make_overlay_gamma(id, cts, roi, gammas, modus, name):
+def draw(roi_img, contours, out_path, out_img, i):
+    cv2.drawContours(roi_img, contours, -1, (0, 255, 0), 1)
+    out_path = out_path + '/' + str(i) + '.png'
+    scale_percent = 500
+    width = int(roi_img.shape[1] * scale_percent / 100)
+    height = int(roi_img.shape[0] * scale_percent / 100)
+    size = (width, height)
+    output = cv2.resize(roi_img, size)
+    output = cv2.rotate(output, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    cv2.imwrite(out_path, output)
+    out_img.append(output)
+
+
+def make_overlay_gamma(patient, external, cts, roi, gammas, mods, name):
     data_path_out = "../data/output_data/gamma_overlay/"
-    data_path_out = data_path_out + modus + '/' + id + '/' + name
+    data_path_out = data_path_out + mods + '/' + patient + '/' + name
     Path(data_path_out).mkdir(parents=True, exist_ok=True)
     roi = roi / 255
     roi = roi > 0.0
     roi = roi.astype(np.uint8)
-    ct_corner = np.asarray(ct_corners[id])
-    grid_corner = np.asarray(grid_corners[id])
+    ct_corner = np.asarray(Dicts.ct_corners[id])
+    grid_corner = np.asarray(Dicts.grid_corners[id])
     corner_indexes = np.round(np.abs(ct_corner - grid_corner) * 10).astype(np.int)
+    gammas[external == 0.0] = 0
     gammas = np.transpose(gammas, axes=[2, 1, 0])
+
     roi = np.transpose(roi, axes=[2, 1, 0])
     gammas = gammas.astype(cts.dtype)
-    cts = cts[corner_indexes[1]:corner_indexes[1] + gammas.shape[1],
-          corner_indexes[0]:corner_indexes[0] + gammas.shape[0], corner_indexes[2]:corner_indexes[2] + gammas.shape[2]]
+    cts = cts[corner_indexes[1]:corner_indexes[1] + gammas.shape[1], corner_indexes[0]:corner_indexes[0]
+              + gammas.shape[0], corner_indexes[2]:corner_indexes[2] + gammas.shape[2]]
+    plt.imshow(cts[:, :, 50], cmap='gray')
+    plt.show()
     gammas = np.transpose(gammas, axes=[1, 0, 2])
     roi = np.transpose(roi, axes=[1, 0, 2])
     out_img = []
@@ -72,19 +71,10 @@ def make_overlay_gamma(id, cts, roi, gammas, modus, name):
         roi_img = cv2.bitwise_and(added_image, added_image, mask=gammas[:, :, i])
         roi_img[gammas[:, :, i] == 0, ...] = ct[gammas[:, :, i] == 0, ...]
         contours, hierarchy = cv2.findContours(roi[:, :, i], cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(roi_img, contours, -1, (0, 255, 0), 1)
-        out_path = out_path + '/' + str(i) + '.png'
-        scale_percent = 500
-        # calculate the 50 percent of original dimensions
-        width = int(roi_img.shape[1] * scale_percent / 100)
-        height = int(roi_img.shape[0] * scale_percent / 100)
-        dsize = (width, height)
-        output = cv2.resize(roi_img, dsize)
-        cv2.imwrite(out_path, output)
-        out_img.append(output)
+        draw(roi_img, contours, out_path, out_img, i)
     for i in range(cts.shape[1]):
-        # sagital
-        out_path = data_path_out + '/sagital'
+        # sagittal
+        out_path = data_path_out + '/sagittal'
         Path(out_path).mkdir(parents=True, exist_ok=True)
         heatmap_img = cv2.applyColorMap(gammas[:, i, :], cv2.COLORMAP_JET)
         ct = cv2.merge((cts[:, i, :], cts[:, i, :], cts[:, i, :]))
@@ -92,17 +82,7 @@ def make_overlay_gamma(id, cts, roi, gammas, modus, name):
         roi_img = cv2.bitwise_and(added_image, added_image, mask=gammas[:, i, :])
         roi_img[gammas[:, i, :] == 0, ...] = ct[gammas[:, i, :] == 0, ...]
         contours, hierarchy = cv2.findContours(roi[:, i, :], cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(roi_img, contours, -1, (0, 255, 0), 1)
-        out_path = out_path + '/' + str(i) + '.png'
-        scale_percent = 500
-        # calculate the 50 percent of original dimensions
-        width = int(roi_img.shape[1] * scale_percent / 100)
-        height = int(roi_img.shape[0] * scale_percent / 100)
-        dsize = (width, height)
-        output = cv2.resize(roi_img, dsize)
-        output = cv2.rotate(output, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        cv2.imwrite(out_path, output)
-        out_img.append(output)
+        draw(roi_img, contours, out_path, out_img, i)
 
     for i in range(cts.shape[0]):
         # coronal
@@ -114,20 +94,10 @@ def make_overlay_gamma(id, cts, roi, gammas, modus, name):
         roi_img = cv2.bitwise_and(added_image, added_image, mask=gammas[i, :, :])
         roi_img[gammas[i, :, :] == 0, ...] = ct[gammas[i, :, :] == 0, ...]
         contours, hierarchy = cv2.findContours(roi[i, :, :], cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        cv2.drawContours(roi_img, contours, -1, (0, 255, 0), 1)
-        out_path = out_path + '/' + str(i) + '.png'
-        scale_percent = 500
-        # calculate the 50 percent of original dimensions
-        width = int(roi_img.shape[1] * scale_percent / 100)
-        height = int(roi_img.shape[0] * scale_percent / 100)
-        dsize = (width, height)
-        output = cv2.resize(roi_img, dsize)
-        output = cv2.rotate(output, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        cv2.imwrite(out_path, output)
-        out_img.append(output)
+        draw(roi_img, contours, out_path, out_img, i)
 
 
-def path_extraction(path, paths, folder_selected):
+def path_extraction(paths, folder_selected):
     path_evaluations = folder_selected + '/doses/*.npy'
     path_evaluations = glob.glob(path_evaluations)
     paths['path_evaluation'] = path_evaluations
@@ -137,10 +107,8 @@ def path_extraction(path, paths, folder_selected):
     path_evaluations.remove(path_original)
     path_gamma = folder_selected + '/gamma/*.npy'
     path_gamma = glob.glob(path_gamma)
-    # path_gamma = list(filter(lambda x: 'gamma' in x, gamma_folder))
     paths['path_gamma'] = path_gamma
     print('gamma files are ' + str([os.path.splitext(os.path.basename(g))[0] for g in path_gamma]))
-    # [path_evaluations.remove(g) for g in path_gamma]
     paths['path_evaluations'] = path_evaluations
     print('evaluation files are ' + str([os.path.splitext(os.path.basename(p))[0] for p in path_evaluations]))
     path_roi = folder_selected + '/roi/*.npy'
@@ -150,19 +118,13 @@ def path_extraction(path, paths, folder_selected):
     paths['name_rois'] = name_rois
 
 
-def plot_settings():
-    sns.set_style("white")
-    plt.tight_layout()
-    sns.set(font_scale=1.05)
-
-
 def evaluate_gamma(gamma, roi, mask, params, name):
-    n = re.search('\d{1,2}\.?\d?', name).group()
+    n = re.search(r'\d{1,2}\.?\d?', name).group()
     n = float(n)
     if 'gamma' in name:
         n = n * 2
-    if 'gammanoise' in name:
-        noi = re.search('\d{1,3}\.\d{1,2}', name).group()
+    if 'gamma_noise' in name:
+        noi = re.search(r'\d{1,3}\.\d{1,2}', name).group()
         noi = float(noi)
         params['noise'].append(noi)
     else:
@@ -170,99 +132,86 @@ def evaluate_gamma(gamma, roi, mask, params, name):
     params['name'].append(n)
     roi_bin = roi != 0
     mask_2 = mask & roi_bin
-    T2 = 1.5
-    gam_tresh = gamma[mask_2]
-    valid_gamma = gam_tresh[~np.isnan(gam_tresh)]
+    t2 = 1.5
+    gam_trash = gamma[mask_2]
+    valid_gamma = gam_trash[~np.isnan(gam_trash)]
     pass_rate = np.round(np.sum(valid_gamma <= 1) / len(valid_gamma) * 100, 2)
     mean_gamma = np.round(np.mean(valid_gamma), 2)  # modified median mean
-    T2_gamma = np.sum(valid_gamma > T2) / len(valid_gamma)
+    t2_gamma = np.sum(valid_gamma > t2) / len(valid_gamma)
     params['valid_gammas'].append(len(valid_gamma))
     params['pass_rate'].append(pass_rate)
     params['mean_gamma'].append(mean_gamma)
-    params['T2_gamma'].append(np.round(T2_gamma, 2))
+    params['T2_gamma'].append(np.round(t2_gamma, 2))
 
 
-def progress(do_overlay, folder_selected, pat, modus):
-    dic_gamma = init()
+def clear_dic(dic):
+    for key in dic:
+        dic[key]: []
+
+
+def progress(do_overlay, folder_selected, pat, mods):
+    clear_dic(Dicts.paths)
+    clear_dic(Dicts.dic_gamma)
     output_path = folder_selected + '/analysis_doses'
     os.makedirs(output_path, exist_ok=True)
     print('Selected folder ' + str(folder_selected))
-    path_extraction(folder_selected, dicts.paths, folder_selected)
+    path_extraction(Dicts.paths, folder_selected)
 
-    dose_original = np.load(paths['path_original']) / 100
-    doses_modified = [np.load(evaluation) / 100 for evaluation in paths['path_evaluations']]
-    gammas = [np.load(g) for g in paths['path_gamma']]
-    rois = [np.load(r) for r in paths['path_roi']]
+    dose_original = np.load(Dicts.paths['path_original']) / 100
+    doses_modified = [np.load(evaluation) / 100 for evaluation in Dicts.paths['path_evaluations']]
+    gammas = [np.load(g) for g in Dicts.paths['path_gamma']]
+    rois = [np.load(r) for r in Dicts.paths['path_roi']]
 
     max_dose = np.max(dose_original)
     dose_cutoff = 0.1 * max_dose
     relevant_slices = (np.max(dose_original, axis=(1, 2)) >= dose_cutoff)
     print('relevant ' + str(relevant_slices.sum()))
-    dose_original_cut = dose_original[relevant_slices, :, :]
     print(f'sum {np.sum(dose_original)}')
+    external = rois[0]
+    rois_2 = []
+    names = []
+    for roi, name in zip(rois, Dicts.paths['name_rois']):
+        if name == 'External_2':
+            external = roi
+            print('External')
+            print(external.shape)
+        else:
+            print(name)
+            print(roi.shape)
+            rois_2.append(roi)
+            names.append(name)
 
-    [os.makedirs(output_path + '/' + fold, exist_ok=True) for fold in folders.values()]
-    if do_gammas:
-        external = rois[0]
-        rois_2 = []
-        names = []
-        for roi, name in zip(rois, paths['name_rois']):
-            if name == 'External_2':
-                external = roi
-                print('External')
-                print(external.shape)
-            else:
-                print(name)
-                print(roi.shape)
-                rois_2.append(roi)
-                names.append(name)
+    for i, (gamma, dose_modified) in enumerate(zip(gammas, doses_modified)):
+        print('gamma shape' + str(gamma.shape))
+        regex = r'w(\d|\d\d).*.npy'
+        name = re.search(regex, Dicts.paths['path_gamma'][i]).group()[:-4]
+        w = re.search(r'\d\d|\d', name).group()
+        print(f'Evaluating {name} gamma')
+        if do_overlay:
+            cts = get_cts(pat, 'mod', w)
+            show_gam = gamma.copy()
+            show_gam[show_gam <= 1] = 0
+            show_gam[show_gam > 1] = 255
+            make_overlay_gamma(pat, external, cts, rois_2[0], show_gam, mods, name)
+        maxi = Dicts.pres_dose[pat]
+        mask = dose_modified > 0.1 * maxi
+        evaluate_gamma(gamma, external, mask, Dicts.dic_gamma, name)
+    df = pd.DataFrame.from_dict(Dicts.dic_gamma)
+    df = df.sort_values(by=['name', 'noise'])
+    patient = re.search(r'zzzCFPatient\d\d', folder_selected).group()
+    df.to_csv(folder_selected + '/' + patient + '_analysis.csv')
 
-        for i, (gamma, dose_modified) in enumerate(zip(gammas, doses_modified)):
-            print('gamma shape' + str(gamma.shape))
-            gamma_label = f"{gamma_options['distance_mm_threshold']}mm{gamma_options['dose_percent_threshold']}%"
-            regex = 'w(\d|\d\d).*.npy'
-            name = re.search(regex, paths['path_gamma'][i]).group()[:-4]
-            print(f'Evaluating {name} gamma')
-            if do_overlay:
-                cts = get_cts(pat)
-                show_gam = gamma.copy()
-                show_gam[show_gam <= 1] = 0
-                show_gam[show_gam > 1] = 255
-                make_overlay_gamma(pat, cts, rois_2[0], show_gam, modus, name)
-
-            # show_gam[show_gam == np.NAN] = 5
-            # data_path_original = r"C:/Users/Carla/OneDrive - tu-dortmund.de/Desktop/Masterarbeit/data/output_data/gauss/png/"
-            # if name == 'w4gauss':
-            #  Path(f'{data_path_original}{name}').mkdir(parents=True, exist_ok=True)
-            #  for i in range(gamma.shape[0]):
-            #      if not np.all(show_gam[i, :, :] == 1):
-            #        filename_original = f'{data_path_original}{name}/{i}.png'
-            #        plt.imsave(filename_original, show_gam[i, :, :])
-            # plt.imshow(show_gam[i,:,:,])
-            # plt.show()
-
-            # maxi = np.max(dose_modified)
-            maxi = prescripted_dose[pat]
+    for i, roi in enumerate(rois_2):
+        for key in Dicts.dic_roi:
+            Dicts.dic_gamma[key]: []
+        for j, (gamma, dose_modified) in enumerate(zip(gammas, doses_modified)):
+            regex = r'w(\d|\d\d).*.npy'
+            name = re.search(regex, Dicts.paths['path_gamma'][j]).group()[:-4]
+            print(f'Evaluating {name} gamma roi')
+            maxi = Dicts.pres_dose[pat]
             mask = dose_modified > 0.1 * maxi
-            evaluate_gamma(gamma, external, mask, dic_gamma, output_path, gamma_label, name)
-        df = pd.DataFrame.from_dict(paths.dic_gamma)
+            evaluate_gamma(gamma, roi, mask, Dicts.dic_roi, name)
+        df = pd.DataFrame.from_dict(Dicts.dic_roi)
         df = df.sort_values(by=['name', 'noise'])
-        patient = re.search('zzzCFPatient\d\d', folder_selected).group()
-        df.to_csv(folder_selected + '/' + patient + '_' + str(gamma_label) + '_analysis.csv')
-
-        for i, roi in enumerate(rois_2):
-            dic_roi = init_roi()
-            for j, (gamma, dose_modified) in enumerate(zip(gammas, doses_modified)):
-                gamma_label = f"{gamma_options['distance_mm_threshold']}mm{gamma_options['dose_percent_threshold']}%"
-                regex = 'w(\d|\d\d).*.npy'
-                name = re.search(regex, paths['path_gamma'][j]).group()[:-4]
-                print(f'Evaluating {name} gamma roi')
-                maxi = prescripted_dose[pat]
-                mask = dose_modified > 0.1 * maxi
-                evaluate_gamma(gamma, roi, mask, dic_roi, output_path, gamma_label, name, str(i))
-            # diff_roi(roi,dic_roi,output_path,dose_original,dose_modified,name,max_dose)
-            df = pd.DataFrame.from_dict(dic_roi)
-            df = df.sort_values(by=['name', 'noise'])
-            patient = re.search('zzzCFPatient\d\d', folder_selected).group()
-            df.to_csv(folder_selected + '/' + patient + '_' + str(gamma_label) + '_roi' + names[i] + '_analysis.csv')
-
+        patient = re.search(r'zzzCFPatient\d\d', folder_selected).group()
+        df.to_csv(folder_selected + '/' + patient + '_roi' + names[i] + '_analysis.csv')
