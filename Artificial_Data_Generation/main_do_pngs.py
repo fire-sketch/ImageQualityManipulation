@@ -1,8 +1,8 @@
-from Patient import PatientDataBase
+from Artificial_Data_Generation.Patient import PatientDataBase
 
 # mods: gaussian, rectangle, noise, noise_gauss
 mods = 'noise_gauss'
-DATA_PATH_IN = "../data/input_data"
+DATA_PATH_IN = "../../data/input_data"
 DATA_PATH_OUT = "../data/output_data/" + mods
 ct_data_out = "../data/output_data/png_org"
 

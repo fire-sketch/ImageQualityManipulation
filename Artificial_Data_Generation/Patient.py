@@ -2,7 +2,7 @@ from glob import glob
 import os
 from pathlib import Path
 import pydicom
-from CTData import CT3D, CTLayer
+from Artificial_Data_Generation.CTData import CT3D, CTLayer
 
 
 class Patient:

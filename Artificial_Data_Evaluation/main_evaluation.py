@@ -9,9 +9,9 @@ mods = 'gauss'
 
 folder_selected = None
 if mods == 'rect':
-    folder_selected = Path("../data/rect")
+    folder_selected = Path("../../data/rect")
 if mods == 'gauss':
-    folder_selected = Path(r"../data/gauss")
+    folder_selected = Path(r"../../data/gauss")
 if mods == 'noise':
     folder_selected = Path("../data/noise")
 if mods == 'gauss_noise':
