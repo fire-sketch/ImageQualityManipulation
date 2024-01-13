@@ -32,8 +32,8 @@ class CTExperimentData(ExperimentParameter):
 
 def init_experiment_data():
     Wire4mm.cor = [234, 210]
-    ESF.cor_x = [186, 231]
-    ESF.cor_y = [169, 183]
+    ESF.cor_x = [195, 228]
+    ESF.cor_y = [170, 183]
     Wire4mm.slices = [49, 123]
     ESF.slices = [49, 123]
 
@@ -53,10 +53,9 @@ def get_experiment_data(root, name, operation):
 
 
 def get_experiment_data_ct(root, name):
-    names = ['ub039', 'b039', 'ub068', 'ub077', 'b097', 'b117']
+    names = ['ub_039', 'b_039', 'ub_068', 'ub_077', 'b_097', 'b_117']
     slices = [[101, 131], [20, 50], [141, 170], [91, 119], [21, 48], [24, 52]]
     cor = [[140, 320], [138, 320], [190, 287], [210, 277], [198, 283], [217, 274]]
     index = names.index(name)
     path = root + '/' + name
     return CTExperimentData(name, path, 1, slices[index], cor[index])
-
