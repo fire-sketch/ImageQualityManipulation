@@ -15,7 +15,8 @@ class CT3D:
     def __init__(self, ct_layers):
         self.ct_layers = ct_layers
 
-    def write_modified_as_png(self, data_path, numbered, save_original, data_path_original):
+    def write_modified_as_png(self, data_path, numbered, save_original, data_path_original, center, width):
+        print('Start saving pngs')
         shutil.rmtree(data_path, ignore_errors=True)
         Path(data_path).mkdir(parents=True, exist_ok=True)
         pix_org = self.get_hu_3d_pixel_array()
@@ -26,7 +27,6 @@ class CT3D:
         out_org = zoom(pix_org, (zoom_x, zoom_y, zoom_z))
         out_mod = zoom(pix_mod, (zoom_x, zoom_y, zoom_z))
         if save_original:
-            print(f'Saving modified png files to {data_path}, saving original to {data_path_original}')
             Path(data_path_original).mkdir(parents=True, exist_ok=True)
         if numbered:
             for i in range(out_org.shape[2]):
@@ -34,12 +34,12 @@ class CT3D:
                 filename_original = f'{data_path_original}/{i}.png'
                 self.ct_layers[0].write_modified_as_png(out_org[:, :, i], out_mod[:, :, i], filename, numbered,
                                                         save_original,
-                                                        filename_original)
+                                                        filename_original, center, width)
+            print(f'Saved modified png files to {data_path}, saving original to {data_path_original}')
         else:
-            print(f'Saving modified png files to {data_path}')
             for ct in self.ct_layers:
                 ct.write_modified_as_png(out_org, data_path, numbered, save_original, data_path_original)
-
+            print(f'Saved modified png files to {data_path}')
     def write_modified_as_dicom(self, data_path):
         print(f'Saving Dicom files to {data_path}')
         shutil.rmtree(data_path, ignore_errors=True)
@@ -123,28 +123,33 @@ class CTLayer:
         img = apply_modality_lut(mod_pixel, self.dicom_header)
         return img
 
-    def get_window_ct(self, ct):
+    def get_window_ct(self, ct, center, width):
         img_hu = ct
-        center = self.dicom_header.WindowCenter[0]
-        width = self.dicom_header.WindowWidth[0]
         img_min = center - width // 2
         img_max = center + width // 2
+       # plt.hist(img_hu.flatten(),bins=50)
+        #plt.show()
         img_hu[img_hu < img_min] = img_min
         img_hu[img_hu > img_max] = img_max
         img_hu = (img_hu - img_min) / (img_max - img_min) * 255.0
         return img_hu.astype(np.uint8)
 
-    def write_modified_as_png(self, out_org, out_mod, filename, numbered, save_original, data_path_original):
+    def write_modified_as_png(self, out_org, out_mod, filename, numbered, save_original, data_path_original,
+                              center, width):
+        if center is None:
+            center = self.dicom_header.WindowCenter[0]
+        if width is None:
+            width = self.dicom_header.WindowWidth[0]
         if numbered:
             if save_original:
-                cv2.imwrite(data_path_original, self.get_window_ct(out_org))
-            cv2.imwrite(filename, self.get_window_ct(out_mod))
+                cv2.imwrite(data_path_original, self.get_window_ct(out_org, center, width))
+            cv2.imwrite(filename, self.get_window_ct(out_mod, center, width))
 
         else:
-            plt.imsave(filename + '.png', self.get_window_ct(self.__modified_pixel_array),
+            plt.imsave(filename + '.png', self.get_window_ct(self.__modified_pixel_array, center, width),
                        cmap='gray')
             if save_original:
-                plt.imsave(data_path_original + '.png', self.get_window_ct(self.pixel_array), cmap='gray')
+                plt.imsave(data_path_original + '.png', self.get_window_ct(self.pixel_array, center, width), cmap='gray')
 
     def write_modified_as_dicom(self, data_path):
         mod_dicom = self.dicom_header.copy()

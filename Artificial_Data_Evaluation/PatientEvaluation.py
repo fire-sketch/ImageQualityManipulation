@@ -11,12 +11,12 @@ import re
 import Dicts
 
 
-def get_cts(patient, use='mod', w='1'):
+def get_cts(patient, use='mod', w='1', mods='gaussian'):
     path = ''
     if use == 'original':
-        path = r"../data/output_data/png_original" + "/" + patient
+        path = r"../../data/output_data/png_original" + "/" + patient
     elif use == 'mod':
-        path = r"../data/output_data/png/" + patient + 'w' + w
+        path = r"../../data/output_data/png/" + mods + '/' + patient + 'w' + w
     ct_paths = glob.glob(path + '/*.png')
     ct_paths = natsort.natsorted(ct_paths, reverse=True)
     cts = []
@@ -40,14 +40,14 @@ def draw(roi_img, contours, out_path, out_img, i):
 
 
 def make_overlay_gamma(patient, external, cts, roi, gammas, mods, name):
-    data_path_out = "../data/output_data/gamma_overlay/"
+    data_path_out = "../../data/output_data/gamma_overlay/"
     data_path_out = data_path_out + mods + '/' + patient + '/' + name
     Path(data_path_out).mkdir(parents=True, exist_ok=True)
     roi = roi / 255
-    roi = roi > 0.0
+    roi = roi != 0.0000
     roi = roi.astype(np.uint8)
-    ct_corner = np.asarray(Dicts.ct_corners[id])
-    grid_corner = np.asarray(Dicts.grid_corners[id])
+    ct_corner = np.asarray(Dicts.ct_corners[patient])
+    grid_corner = np.asarray(Dicts.grid_corners[patient])
     corner_indexes = np.round(np.abs(ct_corner - grid_corner) * 10).astype(np.int)
     gammas[external == 0.0] = 0
     gammas = np.transpose(gammas, axes=[2, 1, 0])
@@ -55,9 +55,10 @@ def make_overlay_gamma(patient, external, cts, roi, gammas, mods, name):
     roi = np.transpose(roi, axes=[2, 1, 0])
     gammas = gammas.astype(cts.dtype)
     cts = cts[corner_indexes[1]:corner_indexes[1] + gammas.shape[1], corner_indexes[0]:corner_indexes[0]
-              + gammas.shape[0], corner_indexes[2]:corner_indexes[2] + gammas.shape[2]]
-    plt.imshow(cts[:, :, 50], cmap='gray')
-    plt.show()
+                                                                                       + gammas.shape[0],
+          corner_indexes[2]:corner_indexes[2] + gammas.shape[2]]
+    #plt.imshow(cts[:, :, 50], cmap='gray')
+    #plt.show()
     gammas = np.transpose(gammas, axes=[1, 0, 2])
     roi = np.transpose(roi, axes=[1, 0, 2])
     out_img = []
@@ -93,7 +94,7 @@ def make_overlay_gamma(patient, external, cts, roi, gammas, mods, name):
         added_image = cv2.addWeighted(ct, 0.1, heatmap_img, 0.9, 0)
         roi_img = cv2.bitwise_and(added_image, added_image, mask=gammas[i, :, :])
         roi_img[gammas[i, :, :] == 0, ...] = ct[gammas[i, :, :] == 0, ...]
-        contours, hierarchy = cv2.findContours(roi[i, :, :], cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours, hierarchy = cv2.findContours(roi[i, :, :], cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         draw(roi_img, contours, out_path, out_img, i)
 
 
@@ -149,7 +150,7 @@ def clear_dic(dic):
         dic[key]: []
 
 
-def progress(do_overlay, folder_selected, pat, mods):
+def progress(do_overlay, folder_selected, pat, mods,overlay_widths,overlay_ground='mod'):
     clear_dic(Dicts.paths)
     clear_dic(Dicts.dic_gamma)
     output_path = folder_selected + '/analysis_doses'
@@ -187,8 +188,8 @@ def progress(do_overlay, folder_selected, pat, mods):
         name = re.search(regex, Dicts.paths['path_gamma'][i]).group()[:-4]
         w = re.search(r'\d\d|\d', name).group()
         print(f'Evaluating {name} gamma')
-        if do_overlay:
-            cts = get_cts(pat, 'mod', w)
+        if do_overlay and int(w) in overlay_widths:
+            cts = get_cts(pat, overlay_ground, w, mods)
             show_gam = gamma.copy()
             show_gam[show_gam <= 1] = 0
             show_gam[show_gam > 1] = 255

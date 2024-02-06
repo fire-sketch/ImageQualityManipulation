@@ -35,13 +35,13 @@ dic_roi = {
 }
 
 ct_corners = {
-    'zzzCFPatient00': [-29.94, 16.21, 53.03],
-    'zzzCFPatient01': [17.54, 12.61, 49.23],
+    'zzzCFPatient00': [-29.94, 16.21, 53.03], #links oben erste zahl,zweite zahl,höchste stelle dritte zahl
+    'zzzCFPatient01': [-17.54, 12.61, 49.23],
     'zzzCFPatient02': [-17.53, 12.64, 52.27],
     'zzzCFPatient11': [-25.05, 18.15, 51.83]
 }
 grid_corners = {
-    'zzzCFPatient00': [-4.36, -0.89, 54.73],
+    'zzzCFPatient00': [-4.36, -0.89, 54.73], #links oben erste zahl, zweite zahl,höchste stelle dritte zahl
     'zzzCFPatient01': [-4.7, 1.86, 59.93],
     'zzzCFPatient02': [-13.58, -1.34, 57.87],
     'zzzCFPatient11': [-12.8, 2.61, 58.33]
@@ -86,6 +86,7 @@ max_energy = {
     '12': '168.9',
     '13': '168.9'
 }
+
 min_energy = {
     '00': '100',
     '01': '100',

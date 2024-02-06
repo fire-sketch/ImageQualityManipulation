@@ -1,9 +1,13 @@
 import glob
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pydicom
+import scipy
 from numpy.fft import fft, fftfreq
 from scipy import ndimage
 from scipy.optimize import curve_fit
+from scipy import stats
 from sklearn.linear_model import LinearRegression
 import Lookup_Data
 
@@ -17,7 +21,7 @@ def pre_init():
     Lookup_Data.init_experiment_data()
 
 
-def init(root, name, operation):
+def init(root, name,operation):
     params = None
     cor_x = None
     cor_y = None
@@ -30,6 +34,8 @@ def init(root, name, operation):
     elif operation == 'LSF' or operation == 'CT':
         params = Lookup_Data.get_experiment_data_ct(root, name)
         cor = params.cor
+
+
     slices = params.slices
     path = params.path
     factor = params.factor
@@ -38,10 +44,12 @@ def init(root, name, operation):
     data = []
 
     for file in files:
-        data.append(pydicom.dcmread(file))
+        data.append(pydicom.read_file(file))
 
     slices = data[slices[0]:slices[1]]
     s = np.array([s.pixel_array for s in slices])
+
+
 
     if operation == 'ESF':
         return s, cor_x, cor_y, data, factor
@@ -49,16 +57,20 @@ def init(root, name, operation):
         return s, cor, data, factor
 
 
+
 def esf(root, name, operation):
-    s, cor_y, cor_x, data, factor = init(root, name, operation)
+    s, cor_y, cor_x, data, factor = init(root, name,operation)
+    p0 = [0, 1., 1., 1., 1.]
+    if 'FDG' in name or 'GA' in name:
+        p0 = [3, 1., 1., 1., 1.]
     z_summed = np.zeros((cor_x[1] - cor_x[0], cor_y[1] - cor_y[0]))
     for i, sli in enumerate(s):
         sl = sli[cor_x[0]:cor_x[1], cor_y[0]:cor_y[1]]
 
         z_summed = z_summed - sl
-
+    #plt.imshow(z_summed,cmap='gray')
+    #plt.show()
     z_summed = z_summed / s.shape[0]
-
     esf_ = - np.sum(z_summed, axis=1) / z_summed.shape[1]
 
     lsf = np.diff(esf_)
@@ -69,11 +81,11 @@ def esf(root, name, operation):
 
     lsf = linear_detrend(lsf, noise_ind)
     lsf = lsf - np.mean(lsf[noise_ind])
-    p0 = [1., 1., 1., 1., 1.]
+
     function = gauss
     x_pred = np.arange(x[0], x[-1], 0.01 * data[0].PixelSpacing[0])
     p_opt, p_cov = curve_fit(function, x, lsf, p0=p0)
-    print(p_opt)
+   # (p_opt)
     y_pred = function(x_pred, *p_opt)
     y_max = np.max(y_pred)
     y_pred = y_pred / y_max
@@ -82,10 +94,6 @@ def esf(root, name, operation):
     x_max = x_pred[np.argmax(y_pred)]
     x = x - x_max
     x_pred = x_pred - x_max
-    # plt.plot(x,LSF)
-    # plt.plot(x_pred,y_pred)
-    # plt.grid()
-    # plt.show()
     return x, lsf, x_pred, y_pred
 
 
@@ -139,8 +147,10 @@ def calc_missing_area(left_x, left_y, right_x, right_y, left, right):
     return x_mid
 
 
-def find_intersection_with_zero(y):
+def find_intersection_with_zero(y,argmax=None):
     size = len(y) // 2
+    if argmax:
+        size = argmax
     y_left = y[0:size]
     y_right = y[size:-1]
     first_index = 0
@@ -179,16 +189,21 @@ def find_center(y):
 
 
 def do_lsf_radial(root, name, operation):
+    p0 = [0, 1., 1., 1., 1.]
+    if 'FDG' in name or 'GA' in name:
+        p0 = [3, 1., 1., 1., 1.]
     s, cor, data, factor = init(root, name, operation)
     roi = 10
     s = s - 180.0
     z_summed = np.zeros((2 * roi, 2 * roi))
 
+    print(name)
     for i, sli in enumerate(s):
         sl = sli[cor[1] - roi:cor[1] + roi, cor[0] - roi:cor[0] + roi]
         z_summed = z_summed - sl
     z_summed = z_summed / s.shape[0]
-
+    #plt.imshow(z_summed,cmap='gray')
+   # plt.show()
     angles = np.arange(0, 180, 20)
     bins = 20
     rebin_x = np.linspace(-5, 5, bins)  # -15 bis 19
@@ -202,19 +217,37 @@ def do_lsf_radial(root, name, operation):
 
         noise_ind = [0, 1, 2, 3, -4, -3, -2, -1]
         line_int = np.sum(img_rot, axis=0) / img_rot.shape[0]
+        x = np.arange(len(line_int), dtype='float')
+      #  plt.plot(x,line_int,marker='o',label='erste LSF')
+        #plt.legend()
+        #plt.show()
         line_int = linear_detrend(line_int, noise_ind)
+       # plt.plot(x,line_int,marker='o',label='linear detrend')
+       # plt.legend()
+       # plt.show()
         line_int = line_int - np.mean(line_int[noise_ind])
         line_int = line_int / np.max(line_int)
-
+       # plt.plot(x,line_int,marker='o',label='Normierung und Rauschen')
+       # plt.legend()
+        #plt.show()
         mid = find_center(line_int)
 
-        x = np.arange(len(line_int), dtype='float')
+
         x = x - mid
         argmax = np.argmax(line_int)
-
+        #plt.plot(x,line_int,marker='o')
+        #plt.show()
         x[argmax] = 0
         x = x * data[0].PixelSpacing[0]
-
+       # plt.plot(x,line_int,marker='o')
+        #plt.legend()
+       # plt.grid()
+       # plt.plot(x,line_int,marker='o',label=f'{angle}')
+        #plt.show()
+        #plt.legend()
+        #if angle == 0:
+           # print(angle)
+       # print(f'{angle}: {fw_hm_org(x,line_int,argmax+1)}')
         bin_places = np.digitize(x, rebin_x)
 
         for i, bin_place in enumerate(bin_places):
@@ -228,7 +261,7 @@ def do_lsf_radial(root, name, operation):
             rebin_y[i] /= count
             re_x[i] /= count
     rebin_x = re_x
-
+    #plt.show()
     to_delete = []
     for i in range(len(rebin_y)):
         if np.abs(rebin_y[i]) < 0.0001:
@@ -242,20 +275,20 @@ def do_lsf_radial(root, name, operation):
     rebin_y = rebin_y / np.max(rebin_y)
 
     rebin_x = rebin_x - rebin_x[np.argmax(rebin_y)]
-    p0 = [1, 1., 1., 1., 1.]
 
     function = gauss
     pos_max = np.argmax(rebin_y)
     x_pred = np.arange(-pos_max, len(rebin_y) - pos_max, 0.01) * data[0].PixelSpacing[0]
     p_opt, p_cov = curve_fit(function, rebin_x, rebin_y, p0=p0)
-    print(p_opt)
-    print(p_cov)
     y_pred = function(x_pred, *p_opt)
     y_pred = y_pred / np.max(y_pred)
 
     spacing = data[0].PixelSpacing[0]
     x_max = x_pred[np.argmax(y_pred)]
     x_pred = x_pred - x_max
+   # plt.plot(rebin_x,rebin_y)
+    #plt.plot(x_pred,y_pred)
+   # plt.show()
     return x_pred, y_pred, rebin_x, rebin_y, spacing
 
 
@@ -290,16 +323,20 @@ def do_mtf_fit(x, y, spacing):
     return xf1[0:100] * 10, y1[0:100]
 
 
-def fw_hm_org(x, y):
-    y = y - 0.5
-    first_index, second_index = find_intersection_with_zero(y)
+def fw_hm_org(x, y,argmax=None):
+    yminus = y - 0.5
+    first_index, second_index = find_intersection_with_zero(yminus,argmax)
     x1 = x[first_index]
     x2 = x[first_index + 1]
     x3 = x[second_index - 1]
     x4 = x[second_index]
-    x_left = zero_intersection(x1, y[first_index], x2, y[first_index + 1])
-    x_right = zero_intersection(x3, y[second_index - 1], x4, y[second_index])
+    x_left = zero_intersection(x1, yminus[first_index], x2, yminus[first_index + 1])
+    x_right = zero_intersection(x3, yminus[second_index - 1], x4, yminus[second_index])
     fw_hm = np.round(np.abs(x_left) + x_right, 3)
+    #if fw_hm < 1.0:
+        #fw_hm = fw_hm_org(x,y,argmax)
+   #if fw_hm > 3.0:
+       # fw_hm = fw_hm_org(x,y,argmax)
     return fw_hm
 
 
@@ -311,8 +348,8 @@ def fw_hm_fit(x, y):
 
 
 def mtf_val_fit(x, y):
-    x_50 = np.round(x[np.argmin(np.abs(y - 0.5))], 2)
-    x_10 = np.round(x[np.argmin(np.abs(y - 0.1))], 2)
+    x_50 = np.round(x[np.argmin(np.abs(y - 0.5))], 3)
+    x_10 = np.round(x[np.argmin(np.abs(y - 0.1))], 3)
     return x_50, x_10
 
 
@@ -331,8 +368,254 @@ def mtf_val_org(x, y):
             break
     x1 = x[index_50]
     x2 = x[index_50 + 1]
-    x_50 = np.round(zero_intersection(x1, y_50[index_50], x2, y_50[index_50 + 1]), 2)
+    x_50 = np.round(zero_intersection(x1, y_50[index_50], x2, y_50[index_50 + 1]), 3)
     x1 = x[index_10]
     x2 = x[index_10 + 1]
-    x_10 = np.round(zero_intersection(x1, y_10[index_10], x2, y_10[index_10 + 1]), 2)
+    x_10 = np.round(zero_intersection(x1, y_10[index_10], x2, y_10[index_10 + 1]), 3)
     return x_50, x_10
+def noise_all_image(root,name):
+    params = Lookup_Data.get_noise_data(root, name)
+    cor = params.cor
+    roi = 50
+    if name == 'ub_039' or name == 'b_039':
+        roi = 70
+    if 'FDG' in name or 'GA' in name:
+        cor = [220,220]
+        roi = 12
+   # print('roi ' + str(roi))
+    mean,std = noi(roi,params,cor)
+    slices = params.slices
+    files = sorted(glob.glob(params.path + '/*.dcm'), key=len)
+    data = []
+
+    for file in files:
+        data.append(pydicom.read_file(file))
+
+    slices = data[slices[0]:slices[1]]
+
+    s = np.array([s.pixel_array for s in slices])
+    sl = s[:, cor[1] - roi:cor[1] + roi, cor[0] - roi:cor[0] + roi]
+
+    #hist_data = sl[10:20,25:35,25:35].flatten()
+    print(sl.shape)
+   # for s in sl:
+
+       # h = s[45:55,45:55].flatten()
+
+      #  mean = np.mean(h)
+       # std = np.std(h)
+       # print(f'mean: {mean}, std: {std}')
+        #if name == 'ub_039' or name == 'b_039':
+       #    # h=s[65:75,65:75].flatten()
+       # h=(h-mean)/std
+    #print(sl.shape)
+    #h = np.random.choice(sl.flatten(), 4999, replace=False)
+    #h= sl[10:20,25:35,25:35].flatten()
+        #print(stats.shapiro(h))
+       # print(stats.kstest(h, stats.norm.cdf))
+        #print(stats.kstest(h, stats.norm.cdf))
+    #n, bins, patches = plt.hist(h,bins=30,density=True)
+    #plt.show()
+    # h = s[45:55,45:55].flatten()
+    notgood = 0
+    for j in range(sl.shape[0]):
+        for i in range(sl.shape[2]):
+
+            h = sl[j,:,i]
+            mean = np.mean(h)
+            std = np.std(h)
+       # print(f'mean: {mean}, std: {std}')
+        #if name == 'ub_039' or name == 'b_039':
+        #    h=sl[12,:,70].flatten()
+            h = (h - mean) / std
+    # print(sl.shape)
+    # h = np.random.choice(sl.flatten(), 4999, replace=False)
+    # h= sl[10:20,25:35,25:35].flatten()
+    # print(stats.shapiro(h))
+            gauss = np.random.normal(0, 1, len(h))
+            #stat,p = stats.shapiro(h)
+            stat,p = stats.kstest(h, gauss)
+            if p<0.05:
+               # print(f'{j},{i},p-value: {p}')
+                notgood +=1
+    z = np.shape(sl)[0]
+    x= np.shape(sl)[2]
+    y = np.shape(sl)[1]
+   # print(f'Failquote y {100*notgood/(z*x)}')
+
+    for j in range(sl.shape[0]):
+        for i in range(sl.shape[1]):
+
+            h = sl[j, i, :]
+            mean = np.mean(h)
+            std = np.std(h)
+            # print(f'mean: {mean}, std: {std}')
+            # if name == 'ub_039' or name == 'b_039':
+            #    h=sl[12,:,70].flatten()
+            h = (h - mean) / std
+            # print(sl.shape)
+            # h = np.random.choice(sl.flatten(), 4999, replace=False)
+            # h= sl[10:20,25:35,25:35].flatten()
+            # print(stats.shapiro(h))
+            gauss = np.random.normal(0, 1, len(h))
+            # stat,p = stats.shapiro(h)
+            stat, p = stats.kstest(h, gauss)
+            if p < 0.05:
+                #print(f'{j},{i},p-value: {p}')
+                notgood += 1
+   # print(f'Failquote x {100 * notgood / (z * y)}')
+    for j in range(sl.shape[1]):
+        for i in range(sl.shape[2]):
+
+            h = sl[:, j, i]
+            mean = np.mean(h)
+            std = np.std(h)
+            # print(f'mean: {mean}, std: {std}')
+            # if name == 'ub_039' or name == 'b_039':
+            #    h=sl[12,:,70].flatten()
+            h = (h - mean) / std
+            # print(sl.shape)
+            # h = np.random.choice(sl.flatten(), 4999, replace=False)
+            # h= sl[10:20,25:35,25:35].flatten()
+            # print(stats.shapiro(h))
+            gauss = np.random.normal(0, 1, len(h))
+            # stat,p = stats.shapiro(h)
+            stat, p = stats.kstest(h, gauss)
+            if p < 0.05:
+                #print(f'{j},{i},p-value: {p}')
+                notgood += 1
+
+  #  print(f'Failquote z {100 * notgood / (x * y)}')
+    for i in range(sl.shape[0]):
+
+        h = sl[i, 45:65,45:65].flatten()
+        mean = np.mean(h)
+        std = np.std(h)
+        # print(f'mean: {mean}, std: {std}')
+        # if name == 'ub_039' or name == 'b_039':
+        #    h=sl[12,:,70].flatten()
+        h = (h - mean) / std
+        # print(sl.shape)
+        # h = np.random.choice(sl.flatten(), 4999, replace=False)
+        # h= sl[10:20,25:35,25:35].flatten()
+        # print(stats.shapiro(h))
+        gauss = np.random.normal(0, 1, len(h))
+        # stat,p = stats.shapiro(h)
+        #print(stats.kstest(h,gauss))
+
+    h = sl[10:20, 45:65, 45:65].flatten()
+    mean = np.mean(h)
+    std = np.std(h)
+    # print(f'mean: {mean}, std: {std}')
+    # if name == 'ub_039' or name == 'b_039':
+    #    h=sl[12,:,70].flatten()
+    h = (h - mean) / std
+    # print(sl.shape)
+    # h = np.random.choice(sl.flatten(), 4999, replace=False)
+    # h= sl[10:20,25:35,25:35].flatten()
+    # print(stats.shapiro(h))
+    gauss = np.random.normal(0, 1, len(h))
+    # stat,p = stats.shapiro(h)
+    print(stats.kstest(h, gauss))
+
+    # if p < 0.05:
+   #     print(f'p-value: {p}')
+       # notgood += 1
+
+    #print('mean')
+    #print(me#an)
+   # print('std')
+    #print(std)
+   # print(std / mean)
+
+    #    s = np.random.normal(mean, np.std(data), len(data))
+
+ #x_axis = np.arange(bins[np.argmax(n > 0.0001)], bins[np.argwhere(n > 0.0001)[-1]], 0.01)
+
+ #   gaussian = np.random.normal(mean, std, len(x_axis))
+    #plt.plot(x_axis, gaussian, color='orange')
+#b = []
+ #for i in np.arange(len(bins)-1):
+     #   b.append((bins[i]+bins[i+1])/2.0)
+   # print(len(b))
+   # print(len(n))
+    #b = np.array(b)
+   # n =
+    #plt.plot(b, 1/ (1 * np.sqrt(2 * np.pi)) *np.exp(- (b - 0) ** 2 / (2 * 1** 2)),
+       #     linewidth=2, color='r')
+#
+   # plt.show()
+   # print(stats.shapiro(h))
+   # print(stats.kstest(hist_data, stats.norm.cdf))
+   # testdata = sl[20,:,:].flatten()
+   # testdata = (testdata-mean)/std
+   # print(stats.shapiro(hist_data[:4999]))
+    #hist_data = hist_data / np.max(hist_data)
+
+   # hist_data = (hist_data - np.min(hist_data)) / (np.max(hist_data) - np.min(hist_data))
+    #gauss = np.random.normal(mean, std, len(hist_data))
+   # pdf = stats.norm.pdf(x_axis, loc=mean, scale=std)
+
+    #def fit_function(k, *p0):
+      #  lamb,loc = p0
+      #  '''poisson function, parameter lamb is the fit parameter'''
+      #  return stats.poisson.pmf(k, lamb,loc)
+   # p0 = [1.0,mean]
+    # fit with curve_fit
+    #parameters, cov_matrix = curve_fit(fit_function, b, n,p0=p0)
+    #normed_data = (hist_data - mean) / std
+    #print(stats.normaltest(normed_data))
+   # print(f'parametrs {parameters}')
+   # print(stats.kstest(n, 'poisson',args=(10,0)))
+    #n, bins, patches = plt.hist(hist_data, bins=75, density=True,ls='dotted', lw=3)
+    #plt.hist(hist_data, bins=75)
+    #plt.hist(gauss, bins=75)
+    ##plt.show()
+
+    return mean,std
+def noi(roi,params,cor):
+    slices = params.slices
+    files = sorted(glob.glob(params.path + '/*.dcm'), key=len)
+    data = []
+
+    for file in files:
+        data.append(pydicom.read_file(file))
+
+
+    slices = data[slices[0]:slices[1]]
+
+
+    s = np.array([s.pixel_array for s in slices])
+    sl = s[:, cor[1] - roi:cor[1] + roi, cor[0] - roi:cor[0] + roi]
+    #plt.imshow(sl[0], cmap='gray')
+    #plt.show()
+    #plt.imshow(sl[-1], cmap='gray')
+   # plt.show()
+    mean = np.round(np.mean(sl),2)
+    std = np.round(np.std(sl),2)
+
+
+
+
+    return mean, std
+import math
+def normpdf(x, mean, sd):
+    var = float(sd)**2
+    denom = (2*math.pi*var)**.5
+    num = math.exp(-(float(x)-float(mean))**2/(2*var))
+    return num/denom
+def noise_center(root,name):
+    params = Lookup_Data.get_noise_data(root, name)
+    cor = params.cor
+    roi = 5
+   # print('roi ' + str(roi))
+    return noi(roi, params, cor)
+
+def noise_not_center(root,name):
+    params = Lookup_Data.get_noise_data(root, name)
+    cor = [250,190]
+    roi = 5
+    if name == 'ub_039' or name == 'b_039':
+        cor = [250,65]
+    #print('roi ' + str(roi))
+    return noi(roi, params, cor)

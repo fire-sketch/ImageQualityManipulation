@@ -25,11 +25,12 @@ class Patient:
             return self.id == other
         return False
 
-    def write_modified_as_png(self, data_path="../data/output_data/png", numbered=True, safe_original=True,
-                              data_path_original="../data/output_data/png_original"):
-        data_path = f'{data_path}/{self.id}w{self.width}'
+    def write_modified_as_png(self, data_path="../../data/output_data/png", mods='gaussian', numbered=True,
+                              safe_original=True, data_path_original="../../data/output_data/png_original",
+                              center=None, width=None):
+        data_path = f'{data_path}/{mods}/{self.id}w{self.width}'
         data_path_original = f'{data_path_original}/{self.id}'
-        self.ct_3d.write_modified_as_png(data_path, numbered, safe_original, data_path_original)
+        self.ct_3d.write_modified_as_png(data_path, numbered, safe_original, data_path_original, center, width)
         print(f'finished saving files for Patient {self.id}')
 
     def write_modified_as_dicom(self, mods='w', data_path="../data/output_data/dicom", number=0):
@@ -45,7 +46,7 @@ class Patient:
 
     # sigma in mm in real world
     def convolve_with_filter(self, width=1, filter_type='gaussian', mode="reflect"):
-        print('start convolution')
+        print('start convolution with width ' + str(width) + ' type ' + filter_type)
         self.width = width
         self.ct_3d.convolve_3dct_with_filter(width, filter_type, mode)
         print('end convolution')
